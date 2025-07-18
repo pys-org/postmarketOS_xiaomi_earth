@@ -1,0 +1,80 @@
+pkgname=linux-xiaomi-earth
+pkgver=4.19.325
+pkgrel=0
+pkgdesc="Xiaomi Redmi 12C kernel"
+arch="aarch64"
+_carch="arm64"
+_flavor="xiaomi-earth"
+url="https://kernel.org"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="
+	android-tools
+	bash
+	bc
+	bison
+	devicepkg-dev
+	findutils
+	flex
+	openssl-dev
+	perl
+	libselinux-dev
+	linux-headers
+    	musl-dev
+    	ncurses-dev
+	cpio
+	coreutils
+	xz
+	dtc
+	clang
+"
+
+export CC="clang"
+export HOSTCC="clang"
+
+# Source
+_repository="android_kernel_xiaomi_earth"
+_commit="cf1e061e3c4b0439a744ee7d1a9285dbed2770e4"
+_config="config-$_flavor.$arch"
+source="
+	$pkgname-$_commit.tar.gz::https://github.com/LineageOS/$_repository/archive/$_commit.tar.gz
+	$_config
+	fix_kernel_genheaders.patch
+	fix-broken-inline-functions.patch
+	add-mt6768-dtb.patch
+"
+builddir="$srcdir/$_repository-$_commit"
+_outdir="out"
+
+prepare() {
+	default_prepare
+	REPLACE_GCCH=0 . downstreamkernel_prepare
+}
+
+build() {
+	unset LDFLAGS
+	make -j4 O="$_outdir" ARCH="$_carch" CC="${CC:-gcc}" \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS"
+}
+
+package() {
+	if [ -f "$_outdir"/arch/arm64/boot/Image ]; then
+		rm "$_outdir"/arch/arm64/boot/Image
+	fi
+
+	mv "$_outdir"/arch/arm64/boot/Image.gz "$_outdir"/arch/arm64/boot/Image
+
+	downstreamkernel_package "$builddir" "$pkgdir" "$_carch" \
+		"$_flavor" "$_outdir"
+
+	make dtbs_install O="$_outdir" ARCH="$_carch" \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+
+	# We also need to convert the kernel DTB into a proper android dtb image with the 64-byte header
+	mv "$pkgdir"/boot/dtbs/mediatek/mt6768.dtb "$pkgdir"/boot/dtbs/mediatek/mt6768.dtb.bak
+	mkdtboimg create "$pkgdir"/boot/dtbs/mediatek/mt6768.dtb "$pkgdir"/boot/dtbs/mediatek/mt6768.dtb.bak
+	rm "$pkgdir"/boot/dtbs/mediatek/mt6768.dtb.bak
+
+}
+
+sha512sums=""
